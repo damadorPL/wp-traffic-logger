@@ -31,8 +31,8 @@ Logs incoming WordPress-handled traffic to rotating JSONL files and provides an 
 - Authentication secrets are masked:
   - `Authorization`, `Cookie`, `Set-Cookie` headers
   - sensitive keys like `password`, `token`, `secret`, `nonce`, `api_key`, `session`, `auth`
-  - cookie values for WordPress auth/session cookies (`wordpress*`, `wp_*`, `wp-settings*`,
-    `comment_author*`, `woocommerce*`) — only cookie names are retained
+  - cookie values for auth/session cookies (`wordpress*`, `wp_*`, `wp-settings*`,
+    `comment_author*`, `woocommerce*`, `PHPSESSID`) — only cookie names are retained
   - common secret-bearing fields in raw bodies (JSON and form-urlencoded), including
     `client_secret`, `refresh_token`, `access_token`, `private_key`
 - `X-Forwarded-For` is **not** trusted by default (it is client-spoofable). Set the `trust_proxy`

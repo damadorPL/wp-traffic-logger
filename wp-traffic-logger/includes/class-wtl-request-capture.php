@@ -414,6 +414,7 @@ class WTL_Request_Capture {
 				|| 0 === strpos( $key, 'wp_' )
 				|| 0 === strpos( $key, 'comment_author' )
 				|| 0 === strpos( $key, 'woocommerce' )
+				|| 0 === strpos( $key, 'phpsessid' )
 			) {
 				$masked[ $name ] = '***redacted***';
 				continue;
