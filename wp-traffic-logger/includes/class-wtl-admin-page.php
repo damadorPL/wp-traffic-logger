@@ -281,6 +281,8 @@ class WTL_Admin_Page {
 	 * @return array
 	 */
 	private function get_filters_from_request() {
+		// Read-only listing filters; no state is changed, so no nonce is required.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
 		$raw = array(
 			'date'       => isset( $_GET['date'] ) ? wp_unslash( $_GET['date'] ) : '',
 			'method'     => isset( $_GET['method'] ) ? wp_unslash( $_GET['method'] ) : '',
@@ -313,6 +315,7 @@ class WTL_Admin_Page {
 		}
 
 		$search = sanitize_text_field( $raw['search'] );
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 
 		return array(
 			'date'       => $date,

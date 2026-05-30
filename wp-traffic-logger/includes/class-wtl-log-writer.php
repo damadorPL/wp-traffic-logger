@@ -18,11 +18,22 @@ class WTL_Log_Writer {
 	const LOG_DIR_NAME = 'wp-traffic-logger';
 
 	/**
+	 * Whether the log directory and guard files were verified this request.
+	 *
+	 * @var bool
+	 */
+	private $directory_ready = false;
+
+	/**
 	 * Ensure log directory and guard files exist.
 	 *
 	 * @return bool
 	 */
 	public function ensure_log_directory() {
+		if ( $this->directory_ready ) {
+			return true;
+		}
+
 		$directory = $this->get_log_directory();
 		if ( ! $directory ) {
 			return false;
@@ -48,6 +59,8 @@ class WTL_Log_Writer {
 			@file_put_contents( $web_config_path, $web_config );
 		}
 
+		$this->directory_ready = true;
+
 		return true;
 	}
 
@@ -66,7 +79,15 @@ class WTL_Log_Writer {
 			);
 		}
 
-		$encoded_entry = wp_json_encode( $entry, JSON_UNESCAPED_SLASHES );
+		$json_flags = JSON_UNESCAPED_SLASHES;
+		if ( defined( 'JSON_INVALID_UTF8_SUBSTITUTE' ) ) {
+			$json_flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+		}
+		if ( defined( 'JSON_PARTIAL_OUTPUT_ON_ERROR' ) ) {
+			$json_flags |= JSON_PARTIAL_OUTPUT_ON_ERROR;
+		}
+
+		$encoded_entry = wp_json_encode( $entry, $json_flags );
 		if ( false === $encoded_entry ) {
 			return array(
 				'success' => false,

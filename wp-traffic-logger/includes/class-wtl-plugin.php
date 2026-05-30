@@ -155,6 +155,8 @@ class WTL_Plugin {
 			'capture_rest'    => 1,
 			'capture_ajax'    => 1,
 			'tail_read_bytes' => 2 * MB_IN_BYTES,
+			'sample_rate'     => 1.0,
+			'trust_proxy'     => 0,
 		);
 	}
 
@@ -181,6 +183,10 @@ class WTL_Plugin {
 		$options['capture_public'] = ! empty( $options['capture_public'] ) ? 1 : 0;
 		$options['capture_rest']   = ! empty( $options['capture_rest'] ) ? 1 : 0;
 		$options['capture_ajax']   = ! empty( $options['capture_ajax'] ) ? 1 : 0;
+
+		$sample_rate            = isset( $options['sample_rate'] ) ? (float) $options['sample_rate'] : 1.0;
+		$options['sample_rate'] = max( 0.0, min( 1.0, $sample_rate ) );
+		$options['trust_proxy'] = ! empty( $options['trust_proxy'] ) ? 1 : 0;
 
 		return $options;
 	}

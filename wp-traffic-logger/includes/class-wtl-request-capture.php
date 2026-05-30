@@ -74,19 +74,40 @@ class WTL_Request_Capture {
 			return false;
 		}
 
+		$enabled = false;
 		if ( 'rest' === $context['route_type'] ) {
-			return ! empty( $options['capture_rest'] );
+			$enabled = ! empty( $options['capture_rest'] );
+		} elseif ( 'ajax' === $context['route_type'] ) {
+			$enabled = ! empty( $options['capture_ajax'] );
+		} elseif ( 'public' === $context['route_type'] ) {
+			$enabled = ! empty( $options['capture_public'] );
 		}
 
-		if ( 'ajax' === $context['route_type'] ) {
-			return ! empty( $options['capture_ajax'] );
+		if ( ! $enabled ) {
+			return false;
 		}
 
-		if ( 'public' === $context['route_type'] ) {
-			return ! empty( $options['capture_public'] );
+		return $this->passes_sample_rate( $options );
+	}
+
+	/**
+	 * Apply the configured sampling probability.
+	 *
+	 * @param array $options Plugin options.
+	 * @return bool
+	 */
+	private function passes_sample_rate( $options ) {
+		$rate = isset( $options['sample_rate'] ) ? (float) $options['sample_rate'] : 1.0;
+
+		if ( $rate >= 1.0 ) {
+			return true;
 		}
 
-		return false;
+		if ( $rate <= 0.0 ) {
+			return false;
+		}
+
+		return ( wp_rand( 1, 1000000 ) / 1000000 ) <= $rate;
 	}
 
 	/**
@@ -130,7 +151,7 @@ class WTL_Request_Capture {
 		);
 
 		$cookie_params = $this->truncate_scalars_deep(
-			$this->mask_recursive( $this->unslash_deep( $_COOKIE ) ),
+			$this->mask_cookies( $this->unslash_deep( $_COOKIE ) ),
 			$scalar_cap
 		);
 
@@ -153,7 +174,7 @@ class WTL_Request_Capture {
 			'cookies'         => $cookie_params,
 			'headers'         => $headers,
 			'files'           => $this->extract_files_meta(),
-			'ip'              => $this->get_client_ip(),
+			'ip'              => $this->get_client_ip( ! empty( $options['trust_proxy'] ) ),
 			'user_agent'      => $this->truncate_string( $this->header_or_server( 'User-Agent', 'HTTP_USER_AGENT' ), 1024 ),
 			'referer'         => $this->truncate_string( $this->header_or_server( 'Referer', 'HTTP_REFERER' ), 2048 ),
 			'user_id'         => $user_id ? (int) $user_id : null,
@@ -291,10 +312,14 @@ class WTL_Request_Capture {
 	/**
 	 * Best-effort client IP.
 	 *
+	 * X-Forwarded-For is client-spoofable, so it is only consulted when the
+	 * site operator has explicitly opted in via the trust_proxy option.
+	 *
+	 * @param bool $trust_proxy Whether to honour forwarded-for headers.
 	 * @return string
 	 */
-	private function get_client_ip() {
-		if ( ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
+	private function get_client_ip( $trust_proxy = false ) {
+		if ( $trust_proxy && ! empty( $_SERVER['HTTP_X_FORWARDED_FOR'] ) ) {
 			$forwarded = explode( ',', wp_unslash( $_SERVER['HTTP_X_FORWARDED_FOR'] ) );
 			$candidate = trim( $forwarded[0] );
 			if ( filter_var( $candidate, FILTER_VALIDATE_IP ) ) {
@@ -359,6 +384,45 @@ class WTL_Request_Capture {
 		}
 
 		return $value;
+	}
+
+	/**
+	 * Mask session/auth cookie values.
+	 *
+	 * Cookie names alone are kept; values for WordPress auth/session cookies
+	 * (and any generically sensitive names) are redacted. WordPress auth cookie
+	 * names such as wordpress_logged_in_<hash> do not contain the generic
+	 * sensitive keywords, so they are matched here explicitly to avoid leaking
+	 * live session tokens into the log files.
+	 *
+	 * @param array $cookies Cookie name => value map.
+	 * @return array
+	 */
+	private function mask_cookies( $cookies ) {
+		if ( ! is_array( $cookies ) ) {
+			return array();
+		}
+
+		$masked = array();
+		foreach ( $cookies as $name => $value ) {
+			$key = strtolower( (string) $name );
+
+			if (
+				$this->is_sensitive_key( $key )
+				|| 0 === strpos( $key, 'wordpress' )
+				|| 0 === strpos( $key, 'wp-settings' )
+				|| 0 === strpos( $key, 'wp_' )
+				|| 0 === strpos( $key, 'comment_author' )
+				|| 0 === strpos( $key, 'woocommerce' )
+			) {
+				$masked[ $name ] = '***redacted***';
+				continue;
+			}
+
+			$masked[ $name ] = $value;
+		}
+
+		return $masked;
 	}
 
 	/**
@@ -428,8 +492,16 @@ class WTL_Request_Capture {
 	 * @return string
 	 */
 	private function truncate_string( $value, $max_bytes ) {
+		$value = (string) $value;
+
 		if ( strlen( $value ) <= $max_bytes ) {
 			return $value;
+		}
+
+		// Cut on a UTF-8 character boundary so truncation cannot produce
+		// invalid byte sequences that break JSON encoding downstream.
+		if ( function_exists( 'mb_strcut' ) ) {
+			return mb_strcut( $value, 0, $max_bytes, 'UTF-8' ) . '...[TRUNCATED]';
 		}
 
 		return substr( $value, 0, $max_bytes ) . '...[TRUNCATED]';
@@ -445,12 +517,13 @@ class WTL_Request_Capture {
 		$text = (string) $text;
 
 		$replacements = array(
-			'/(authorization"\s*:\s*")[^"]+(")/i' => '$1***redacted***$2',
+			// Header style: "Authorization: ..." / "Cookie: ...".
 			'/(authorization\s*:\s*)[^\r\n]+/i' => '$1***redacted***',
-			'/(cookie"\s*:\s*")[^"]+(")/i' => '$1***redacted***$2',
 			'/(cookie\s*:\s*)[^\r\n;]+/i' => '$1***redacted***',
-			'/(password"\s*:\s*")[^"]+(")/i' => '$1***redacted***$2',
-			'/(token"\s*:\s*")[^"]+(")/i' => '$1***redacted***$2',
+			// JSON style: "key":"value" for common secret-bearing keys.
+			'/("(?:authorization|cookie|pass(?:word)?|token|secret|nonce|api[_-]?key|client_secret|refresh_token|access_token|private_key|session|auth|bearer)"\s*:\s*")[^"]*(")/i' => '$1***redacted***$2',
+			// Form-urlencoded style: key=value (stop at & or whitespace).
+			'/((?:^|[?&])(?:pass(?:word)?|token|secret|nonce|api[_-]?key|client_secret|refresh_token|access_token|private_key|session|auth|bearer)=)[^&\s]+/i' => '$1***redacted***',
 		);
 
 		foreach ( $replacements as $pattern => $replacement ) {

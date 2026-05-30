@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WP Traffic Logger
  * Description: Logs public, REST, and AJAX traffic to rotating files and exposes a dashboard viewer for admins.
- * Version: 0.1.3
+ * Version: 0.2.0
  * Author: Damador
  * License: GPL-2.0-or-later
  * Requires at least: 6.0
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WTL_VERSION', '0.1.3' );
+define( 'WTL_VERSION', '0.2.0' );
 define( 'WTL_PLUGIN_FILE', __FILE__ );
 define( 'WTL_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WTL_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
